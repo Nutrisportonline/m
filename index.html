@@ -2,6 +2,7 @@
 <html lang="es">
 <head>
 <link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#c8ff00">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tablas Pro Offline</title>
@@ -254,12 +255,12 @@ function renderEquipos(){
 
 function renderGolesDetalle(){
   if(!plantilla.length){ document.getElementById('golesDetalle').innerHTML='<div class="empty">Agrega jugadores primero</div>'; return; }
-  document.getElementById('golesDetalle').innerHTML=plantilla.map(j=>`<div class="jugador-row"><div>${j.nombre} <small style="color:#666">(${j.equipo})</small></div><input id="g_${j.id}" type="number" min="0" placeholder="0" value=""><input id="a_${j.id}" type="number" min="0" placeholder="0" value=""><input id="am_${j.id}" type="number" min="0" placeholder="0" value=""><input id="r_${j.id}" type="number" min="0" placeholder="0" value=""><span></span></div>`).join('');
+  document.getElementById('golesDetalle').innerHTML=plantilla.map(j=>`<div class="jugador-row"><div>${j.nombre} <small style="color:#666">(${j.equipo})</small></div><input id="g_${j.id}" type="number" min="0" placeholder="Goles" value="0"><input id="a_${j.id}" type="number" min="0" placeholder="Asist" value="0"><input id="am_${j.id}" type="number" min="0" placeholder="🟨" value="0"><input id="r_${j.id}" type="number" min="0" placeholder="🟥" value="0"><span></span></div>`).join('');
 }
 
 function renderAsistDetalle(){
   if(!plantilla.length){ document.getElementById('asistDetalle').innerHTML='Sin jugadores'; return; }
-  document.getElementById('asistDetalle').innerHTML=plantilla.map(j=>`<label><input type="checkbox" id="as_${j.id}"><span>${j.nombre}</span></label>`).join('');
+  document.getElementById('asistDetalle').innerHTML=plantilla.map(j=>`<label><input type="checkbox" id="as_${j.id}" checked><span>${j.nombre}</span></label>`).join('');
 }
 
 window.guardarPartido=function(){
@@ -272,13 +273,11 @@ window.guardarPartido=function(){
   if(local===visit) return alert('No pueden ser el mismo equipo');
   let stats=[];
   plantilla.forEach(j=>{
-    let gEl=document.getElementById('g_'+j.id), aEl=document.getElementById('a_'+j.id), amEl=document.getElementById('am_'+j.id), rEl=document.getElementById('r_'+j.id);
-    if(!gEl) return;
-    let g=gEl.value==='' ? 0 : sanitizeNum(gEl.value);
-    let a=aEl.value==='' ? 0 : sanitizeNum(aEl.value);
-    let am=amEl.value==='' ? 0 : sanitizeNum(amEl.value);
-    let r=rEl.value==='' ? 0 : sanitizeNum(rEl.value);
-    if(g>0||a>0||am>0||r>0) stats.push({id:j.id, nombre:j.nombre, equipo:j.equipo, goles:g, asistencias:a, amarillas:am, rojas:r});
+    let g=sanitizeNum(document.getElementById('g_'+j.id)?.value);
+    let a=sanitizeNum(document.getElementById('a_'+j.id)?.value);
+    let am=sanitizeNum(document.getElementById('am_'+j.id)?.value);
+    let r=sanitizeNum(document.getElementById('r_'+j.id)?.value);
+    if(g||a||am||r) stats.push({id:j.id, nombre:j.nombre, equipo:j.equipo, goles:g, asistencias:a, amarillas:am, rojas:r});
   });
   let asistentes=[];
   plantilla.forEach(j=>{
@@ -376,35 +375,60 @@ function renderAll(){
   enforceNoNegatives();
 }
 
+
 window.exportarExcel=function(){
   if(!torneoActual){ alert('Abre un torneo'); return; }
-  const wb = XLSX.utils.book_new();
-  let tabla=calc();
-  let wsTabla = XLSX.utils.json_to_sheet(tabla.map((t,i)=>({Pos:i+1, Equipo:t.nombre, PJ:t.pj, GF:t.gf, GC:t.gc, DG:t.dif, PTS:t.pts})));
-  XLSX.utils.book_append_sheet(wb, wsTabla, "Tabla Posiciones");
-  let stats=calcStats();
-  let goleadores=stats.filter(s=>s.goles>0).sort((a,b)=>b.goles-a.goles).map(s=>({Jugador:s.nombre, Equipo:s.equipo, Goles:s.goles, Asistencias:s.asistencias}));
-  let wsGoles = XLSX.utils.json_to_sheet(goleadores);
-  XLSX.utils.book_append_sheet(wb, wsGoles, "Goleadores");
-  let asist=stats.sort((a,b)=>b.asistenciasPartidos-a.asistenciasPartidos).map(s=>({Jugador:s.nombre, Equipo:s.equipo, Asistencias:s.asistenciasPartidos, TotalPartidos:partidos.length, Porcentaje: partidos.length? Math.round((s.asistenciasPartidos/partidos.length)*100)+'%' : '0%'}));
-  let wsAsist = XLSX.utils.json_to_sheet(asist);
-  XLSX.utils.book_append_sheet(wb, wsAsist, "Asistencias");
-  XLSX.writeFile(wb, `${torneoActual.nombre}_Offline.xlsx`);
+  try{
+    const wb = XLSX.utils.book_new();
+    let tabla=calc();
+    let tablaData = tabla.length ? tabla.map((t,i)=>({Pos:i+1, Equipo:t.nombre, PJ:t.pj, GF:t.gf, GC:t.gc, DG:t.dif, PTS:t.pts})) : [{Pos:'', Equipo:'Sin equipos/partidos', PJ:0}];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tablaData), "Tabla");
+    let stats=calcStats();
+    let plantData = plantilla.length ? plantilla.map(j=>{
+      let s = stats.find(x=>x.id===j.id) || {goles:0, asistencias:0, amarillas:0, rojas:0, asistenciasPartidos:0};
+      return {Nombre:j.nombre, Equipo:j.equipo, Pos:j.pos, Numero:j.numero||'', Goles:s.goles, AsistPase:s.asistencias, Amarillas:s.amarillas, Rojas:s.rojas, Partidos:s.asistenciasPartidos, Foto: j.foto ? 'Si' : 'No'};
+    }) : [{Nombre:'Sin jugadores'}];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(plantData), "Plantilla");
+    let partidosData = partidos.length ? partidos.map(p=>({
+      Fecha:p.fecha||'', Local:p.local||'', GolesLocal:p.gL||0, Visitante:p.visit||'', GolesVisita:p.gV||0, 
+      Detalle:(p.stats||[]).length ? (p.stats||[]).map(s=>s.nombre+':'+s.goles).join(', ') : 'Sin goleadores',
+      Asistieron:(p.asistentes||[]).length
+    })) : [{Fecha:'Sin partidos'}];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(partidosData), "Partidos");
+    let goles=stats.filter(s=>s.goles>0).sort((a,b)=>b.goles-a.goles);
+    let golesData = goles.length ? goles.map(s=>({Jugador:s.nombre, Equipo:s.equipo, Goles:s.goles, Asist:s.asistencias})) : [{Jugador:'Sin goles'}];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(golesData), "Goleadores");
+    let tarjData = stats.length ? stats.map(s=>({Jugador:s.nombre, Equipo:s.equipo, Amarillas:s.amarillas||0, Rojas:s.rojas||0, Estado:(s.rojas>=1||s.amarillas>=2)?'SUSPENDIDO':'OK'})) : [{Jugador:'Sin datos'}];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tarjData), "Tarjetas");
+    XLSX.writeFile(wb, `${torneoActual.nombre}_Completo.xlsx`);
+  }catch(e){ alert('Error: '+e.message); }
 }
-
 window.exportarPDF=function(){
   if(!torneoActual){ alert('Abre un torneo'); return; }
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF();
-  doc.setFontSize(16);
-  doc.text(`Torneo: ${torneoActual.nombre} - OFFLINE`, 14, 18);
-  doc.setFontSize(10);
-  doc.text(`Fecha: ${new Date().toLocaleDateString()} - Admin Offline`, 14, 24);
-  let y=30;
-  let tabla=calc();
-  doc.text("Tabla de Posiciones", 14, y); y+=4;
-  doc.autoTable({ startY:y, head:[['#','Equipo','PJ','GF','GC','DG','PTS']], body: tabla.map((t,i)=>[i+1, t.nombre, t.pj, t.gf, t.gc, t.dif, t.pts]), theme:'grid', styles:{fontSize:8}, headStyles:{fillColor:[200,255,0], textColor:[0,0,0]} });
-  doc.save(`${torneoActual.nombre}_Offline.pdf`);
+  try{
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text(`Torneo: ${torneoActual.nombre}`, 14, 18);
+    let y=30;
+    let tabla=calc();
+    doc.text("Tabla", 14, y); y+=4;
+    if(tabla.length){
+      doc.autoTable({ startY:y, head:[['#','Equipo','PJ','GF','GC','DG','PTS']], body: tabla.map((t,i)=>[i+1, t.nombre, t.pj, t.gf, t.gc, t.dif, t.pts]), theme:'grid', styles:{fontSize:8} });
+      y = doc.lastAutoTable.finalY + 8;
+    }
+    let stats=calcStats();
+    if(stats.length){
+      doc.text("Jugadores", 14, y); y+=4;
+      doc.autoTable({ startY:y, head:[['Jugador','Equipo','G','A','🟨','🟥']], body: stats.map(s=>[s.nombre, s.equipo, s.goles||0, s.asistencias||0, s.amarillas||0, s.rojas||0]), theme:'grid', styles:{fontSize:7} });
+      y = doc.lastAutoTable.finalY + 8;
+    }
+    doc.text("Partidos", 14, y); y+=4;
+    if(partidos.length){
+      doc.autoTable({ startY:y, head:[['Fecha','Local','G','Visita','G']], body: partidos.map(p=>[p.fecha||'', p.local||'', p.gL||0, p.visit||'', p.gV||0]), theme:'grid', styles:{fontSize:7} });
+    }else{ doc.text("Sin partidos", 14, y); }
+    doc.save(`${torneoActual.nombre}_Completo.pdf`);
+  }catch(e){ alert('Error PDF: '+e.message); }
 }
 
 window.exportarBackup=function(){
