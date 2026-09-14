@@ -1,12 +1,11 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<link rel="manifest" href="manifest.json">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tablas Pro Offline</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
-
+<link rel="manifest" href="./manifest.json">
 <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192x192.png">
 <link rel="apple-touch-icon" href="./icons/icon-192x192.png">
 <meta name="theme-color" content="#c8ff00">
@@ -77,7 +76,7 @@ input[type=number]::-webkit-inner-spin-button{opacity:1}
 <button class="tab" onclick="showTab('plantilla')">Plantilla</button>
 <button class="tab" onclick="showTab('partidos')">Partidos</button>
 <button class="tab" onclick="showTab('goleadores')">Goleadores</button>
-<button class="tab" onclick="showTab('asistencias')">Asistencias</button>
+<!-- Asistencias partido eliminado - solo quedan asist de gol -->
 <button class="tab" onclick="showTab('tarjetas')">Tarjetas</button>
 <button class="tab" onclick="showTab('equipos')">Equipos</button>
 </div>
@@ -142,7 +141,9 @@ window.abrirTorneo=function(id){
   let t=torneos.find(x=>x.id===id);
   if(!t) return;
   torneoActual=t; torneoActualId=id;
-  equipos=t.equipos||[]; partidos=t.partidos||[]; plantilla=t.plantilla||[];
+  equipos = (t.equipos||[]).map(eq=> (typeof eq==='string'? eq : eq.nombre||eq.name||'Equipo'));
+        // Guardar como strings para compatibilidad con backup, pero render soporta ambos
+         partidos=t.partidos||[]; plantilla=t.plantilla||[];
   document.getElementById('torneoNombreTitle').textContent=t.nombre;
   document.getElementById('view-lista').style.display='none';
   document.getElementById('view-torneo').style.display='block';
@@ -166,16 +167,16 @@ window.borrarTorneoActual=function(){
 
 window.showTab=function(name){
   document.querySelectorAll('#tabsTorneo .tab').forEach((el,i)=>{
-    let tabs=['tabla','plantilla','partidos','goleadores','asistencias','tarjetas','equipos'];
+    let tabs=['tabla','plantilla','partidos','goleadores','tarjetas','equipos'];
     el.classList.toggle('active', tabs[i]===name);
   });
-  ['tabla','plantilla','partidos','goleadores','asistencias','tarjetas','equipos'].forEach(t=>{
+  ['tabla','plantilla','partidos','goleadores','tarjetas','equipos'].forEach(t=>{
     document.getElementById('tab-'+t).style.display = t===name?'block':'none';
   });
 }
 
 function actualizarSelectsEquipos(){
-  let opts=equipos.map(e=>`<option value="${e.nombre}">${e.nombre}</option>`).join('');
+  let opts=equipos.map(e=>{ let n=(typeof e==='string'?e:e.nombre); return `<option value="${n}">${n}</option>`; }).join('');
   document.getElementById('partLocal').innerHTML=opts;
   document.getElementById('partVisit').innerHTML=opts;
   document.getElementById('jugEquipo').innerHTML='<option value="">Equipo</option>'+opts;
@@ -248,13 +249,17 @@ function renderPlantilla(){
 
 function renderEquipos(){
   let cont=document.getElementById('listaEquipos');
-  if(!equipos.length){ cont.innerHTML='<div class="empty">Sin equipos</div>'; return; }
-  cont.innerHTML=equipos.map(e=>`<div style="background:#1c1c1c;padding:12px;border-radius:12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;border:1px solid #232323"><b>${e.nombre}</b><button class="btn-small" style="background:#2a1515;color:#ff5555" onclick="borrarEquipo('${e.nombre}')">Borrar</button></div>`).join('');
+  if(!equipos || !equipos.length){ cont.innerHTML='<div class="empty">Sin equipos</div>'; return; }
+  // Normaliza: soporta string o objeto {nombre}
+  cont.innerHTML=equipos.map(e=>{
+    let nombre = (typeof e==='string') ? e : (e.nombre||e.name||'Equipo');
+    return `<div style="background:#1c1c1c;padding:12px;border-radius:12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;border:1px solid #232323"><b>${nombre}</b><button class="btn-small" style="background:#2a1515;color:#ff5555" onclick="borrarEquipo('${nombre}')">Borrar</button></div>`;
+  }).join('');
 }
 
 function renderGolesDetalle(){
   if(!plantilla.length){ document.getElementById('golesDetalle').innerHTML='<div class="empty">Agrega jugadores primero</div>'; return; }
-  document.getElementById('golesDetalle').innerHTML=plantilla.map(j=>`<div class="jugador-row"><div>${j.nombre} <small style="color:#666">(${j.equipo})</small></div><input id="g_${j.id}" type="number" min="0" placeholder="Goles" value="0"><input id="a_${j.id}" type="number" min="0" placeholder="Asist" value="0"><input id="am_${j.id}" type="number" min="0" placeholder="🟨" value="0"><input id="r_${j.id}" type="number" min="0" placeholder="🟥" value="0"><span></span></div>`).join('');
+  document.getElementById('golesDetalle').innerHTML=plantilla.map(j=>`<div class="jugador-row"><div>${j.nombre} <small style="color:#666">(${j.equipo})</small></div><input id="g_${j.id}" type="number" min="0" placeholder="0" value=""><input id="a_${j.id}" type="number" min="0" placeholder="0" value=""><input id="am_${j.id}" type="number" min="0" placeholder="0" value=""><input id="r_${j.id}" type="number" min="0" placeholder="0" value=""><span></span></div>`).join('');
 }
 
 function renderAsistDetalle(){
@@ -272,11 +277,13 @@ window.guardarPartido=function(){
   if(local===visit) return alert('No pueden ser el mismo equipo');
   let stats=[];
   plantilla.forEach(j=>{
-    let g=sanitizeNum(document.getElementById('g_'+j.id)?.value);
-    let a=sanitizeNum(document.getElementById('a_'+j.id)?.value);
-    let am=sanitizeNum(document.getElementById('am_'+j.id)?.value);
-    let r=sanitizeNum(document.getElementById('r_'+j.id)?.value);
-    if(g||a||am||r) stats.push({id:j.id, nombre:j.nombre, equipo:j.equipo, goles:g, asistencias:a, amarillas:am, rojas:r});
+    let gEl=document.getElementById('g_'+j.id), aEl=document.getElementById('a_'+j.id), amEl=document.getElementById('am_'+j.id), rEl=document.getElementById('r_'+j.id);
+    if(!gEl) return;
+    let g=gEl.value==='' ? 0 : sanitizeNum(gEl.value);
+    let a=aEl.value==='' ? 0 : sanitizeNum(aEl.value);
+    let am=amEl.value==='' ? 0 : sanitizeNum(amEl.value);
+    let r=rEl.value==='' ? 0 : sanitizeNum(rEl.value);
+    if(g>0||a>0||am>0||r>0) stats.push({id:j.id, nombre:j.nombre, equipo:j.equipo, goles:g, asistencias:a, amarillas:am, rojas:r});
   });
   let asistentes=[];
   plantilla.forEach(j=>{
@@ -325,7 +332,7 @@ window.borrarPartido=function(idx){ if(!confirm('Borrar partido?')) return; part
 
 function calc(){
   let tabla={};
-  equipos.forEach(e=>{ tabla[e.nombre]={nombre:e.nombre, pj:0, gf:0, gc:0, dif:0, pts:0}; });
+  equipos.forEach(e=>{ let n=(typeof e==='string'?e:e.nombre); tabla[n]={nombre:n, pj:0, gf:0, gc:0, dif:0, pts:0}; });
   partidos.forEach(p=>{
     if(!tabla[p.local]) tabla[p.local]={nombre:p.local, pj:0, gf:0, gc:0, dif:0, pts:0};
     if(!tabla[p.visit]) tabla[p.visit]={nombre:p.visit, pj:0, gf:0, gc:0, dif:0, pts:0};
@@ -352,7 +359,7 @@ function calcStats(){
         map[s.id].rojas+=s.rojas||0;
       }
     });
-    (p.asistentes||[]).forEach(id=>{ if(map[id]) map[id].asistenciasPartidos++; });
+    
   });
   return Object.values(map);
 }
@@ -364,13 +371,12 @@ function renderAll(){
   else{
     tablaCont.innerHTML=`<div class="table-header" style="grid-template-columns:32px 1fr 32px 32px 32px 32px 44px"><div>#</div><div>EQUIPO</div><div>PJ</div><div>GF</div><div>GC</div><div>DG</div><div>PTS</div></div>` + tabla.map((t,i)=>`<div class="table-row" style="grid-template-columns:32px 1fr 32px 32px 32px 32px 44px"><div>${i+1}</div><div><b>${t.nombre}</b></div><div style="text-align:center">${t.pj}</div><div style="text-align:center">${t.gf}</div><div style="text-align:center">${t.gc}</div><div style="text-align:center">${t.dif}</div><div class="puntos">${t.pts}</div></div>`).join('');
   }
-  renderPlantilla(); renderEquipos(); renderGolesDetalle(); renderAsistDetalle();
+  renderPlantilla(); renderEquipos(); renderGolesDetalle();
   let allStats=calcStats();
   document.getElementById('goleadoresCard').innerHTML= allStats.filter(s=>s.goles>0).length ? `<div class="table-header" style="grid-template-columns:32px 1fr 44px 44px"><div>#</div><div>JUGADOR</div><div style="text-align:center">GOLES</div><div style="text-align:center">ASIST</div></div>` + allStats.filter(s=>s.goles>0).sort((a,b)=>b.goles-a.goles).map((s,i)=>`<div class="table-row" style="grid-template-columns:32px 1fr 44px 44px"><div>${i+1}</div><div>${s.nombre} <small style="color:#666">(${s.equipo})</small></div><div class="puntos">${s.goles}</div><div style="text-align:center">${s.asistencias}</div></div>`).join('') : '<div class="empty">Sin goles</div>';
   document.getElementById('asistenciasCard').innerHTML= `<div class="table-header" style="grid-template-columns:32px 1fr 44px 44px"><div>#</div><div>JUGADOR</div><div style="text-align:center">ASIST</div><div style="text-align:center">%</div></div>` + allStats.sort((a,b)=>b.asistenciasPartidos-a.asistenciasPartidos).map((s,i)=>{ let pct=partidos.length? Math.round((s.asistenciasPartidos/partidos.length)*100):0; return `<div class="table-row" style="grid-template-columns:32px 1fr 44px 44px"><div>${i+1}</div><div>${s.nombre} <small style="color:#666">(${s.equipo})</small></div><div style="text-align:center">${s.asistenciasPartidos}/${partidos.length}</div><div class="puntos">${pct}%</div></div>` }).join('');
-  document.getElementById('asistResumen').textContent=`Total partidos: ${partidos.length} | Jugadores: ${plantilla.length}`;
-  document.getElementById('tarjetasCard').innerHTML= allStats.filter(s=>s.amarillas||s.rojas).length ? `<div class="table-header" style="grid-template-columns:32px 1fr 36px 36px 60px"><div>#</div><div>JUGADOR</div><div style="text-align:center">🟨</div><div style="text-align:center">🟥</div><div>ESTADO</div></div>` + allStats.filter(s=>s.amarillas||s.rojas).map((s,i)=>{ let susp=s.rojas>=1 || s.amarillas>=2; return `<div class="table-row" style="grid-template-columns:32px 1fr 36px 36px 60px"><div>${i+1}</div><div>${s.nombre}</div><div style="text-align:center;color:#ffcc00">${s.amarillas}</div><div style="text-align:center;color:#ff5555">${s.rojas}</div><div>${susp?'<span class="suspendido">SUSPENDIDO</span>':'<span style="color:#666;font-size:10px">OK</span>'}</div></div>` }).join('') : '<div class="empty">Sin tarjetas</div>';
-  document.getElementById('listaPartidos').innerHTML=partidos.map((p,i)=>`<div style="background:#1c1c1c;padding:10px;border-radius:10px;margin-bottom:6px;border:1px solid #232323"><div style="display:flex;justify-content:space-between"><div><b>${p.local}</b> ${p.gL}-${p.gV} <b>${p.visit}</b><br><small style="color:#666">${p.fecha} • Goles: ${(p.stats||[]).map(s=>s.nombre+':'+s.goles).join(', ')||'Sin detalle'} • Asist: ${(p.asistentes||[]).length}</small></div><div style="display:flex;gap:6px"><button class="btn-small btn-dark" style="font-size:10px;padding:5px 8px;width:auto" onclick="editarPartido(${i})">Editar</button><button class="btn-small" style="font-size:10px;padding:5px 8px;width:auto;background:#2a1515;color:#ff5555;border:1px solid #442222" onclick="borrarPartido(${i})">Borrar</button></div></div></div>`).join('')||'<div class="empty">No hay partidos</div>';
+    document.getElementById('tarjetasCard').innerHTML= allStats.filter(s=>s.amarillas||s.rojas).length ? `<div class="table-header" style="grid-template-columns:32px 1fr 36px 36px 60px"><div>#</div><div>JUGADOR</div><div style="text-align:center">🟨</div><div style="text-align:center">🟥</div><div>ESTADO</div></div>` + allStats.filter(s=>s.amarillas||s.rojas).map((s,i)=>{ let susp=s.rojas>=1 || s.amarillas>=2; return `<div class="table-row" style="grid-template-columns:32px 1fr 36px 36px 60px"><div>${i+1}</div><div>${s.nombre}</div><div style="text-align:center;color:#ffcc00">${s.amarillas}</div><div style="text-align:center;color:#ff5555">${s.rojas}</div><div>${susp?'<span class="suspendido">SUSPENDIDO</span>':'<span style="color:#666;font-size:10px">OK</span>'}</div></div>` }).join('') : '<div class="empty">Sin tarjetas</div>';
+  document.getElementById('listaPartidos').innerHTML=partidos.map((p,i)=>`<div style="background:#1c1c1c;padding:10px;border-radius:10px;margin-bottom:6px;border:1px solid #232323"><div style="display:flex;justify-content:space-between"><div><b>${p.local}</b> ${p.gL}-${p.gV} <b>${p.visit}</b><br><small style="color:#666">${p.fecha} Goles: ${(p.stats||[]).map(s=>s.nombre+':'+s.goles).join(', ')||'Sin detalle'} </small></div><div style="display:flex;gap:6px"><button class="btn-small btn-dark" style="font-size:10px;padding:5px 8px;width:auto" onclick="editarPartido(${i})">Editar</button><button class="btn-small" style="font-size:10px;padding:5px 8px;width:auto;background:#2a1515;color:#ff5555;border:1px solid #442222" onclick="borrarPartido(${i})">Borrar</button></div></div></div>`).join('')||'<div class="empty">No hay partidos</div>';
   enforceNoNegatives();
 }
 
@@ -384,7 +390,7 @@ window.exportarExcel=function(){
   let goleadores=stats.filter(s=>s.goles>0).sort((a,b)=>b.goles-a.goles).map(s=>({Jugador:s.nombre, Equipo:s.equipo, Goles:s.goles, Asistencias:s.asistencias}));
   let wsGoles = XLSX.utils.json_to_sheet(goleadores);
   XLSX.utils.book_append_sheet(wb, wsGoles, "Goleadores");
-  let asist=stats.sort((a,b)=>b.asistenciasPartidos-a.asistenciasPartidos).map(s=>({Jugador:s.nombre, Equipo:s.equipo, Asistencias:s.asistenciasPartidos, TotalPartidos:partidos.length, Porcentaje: partidos.length? Math.round((s.asistenciasPartidos/partidos.length)*100)+'%' : '0%'}));
+  let asist=stats.sort((a,b)=>b.asistenciasPartidos-a.asistenciasPartidos).map(s=>({Jugador:s.nombre, Equipo:s.equipo, Asistencias:s.asistenciasPartidos, TotalPartidos:partidos.length, AsistGol: partidos.length? Math.round((s.asistenciasPartidos/partidos.length)*100)+'%' : '0%'}));
   let wsAsist = XLSX.utils.json_to_sheet(asist);
   XLSX.utils.book_append_sheet(wb, wsAsist, "Asistencias");
   XLSX.writeFile(wb, `${torneoActual.nombre}_Offline.xlsx`);
@@ -405,29 +411,8 @@ window.exportarPDF=function(){
   doc.save(`${torneoActual.nombre}_Offline.pdf`);
 }
 
-window.exportarBackup=function(){
-  try{
-    let backupData = torneos.map(torneo => ({
-      id: torneo.id || Date.now().toString(),
-      nombre: torneo.nombre || 'Sin nombre',
-      equipos: Array.isArray(torneo.equipos) ? torneo.equipos : [],
-      partidos: Array.isArray(torneo.partidos) ? torneo.partidos : [],
-      plantilla: Array.isArray(torneo.plantilla) ? torneo.plantilla : [],
-      fechaCreacion: torneo.fechaCreacion || new Date().toISOString(),
-      version: '3.0'
-    }));
-    let dataStr = JSON.stringify(backupData, null, 2);
-    let blob = new Blob([dataStr], {type:'application/json'});
-    let url = URL.createObjectURL(blob);
-    let a = document.createElement('a');
-    a.href=url; a.download='tablas_pro_backup_'+new Date().toISOString().slice(0,10)+'.json';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    alert('Backup exportado: ' + backupData.length + ' torneo(s)');
-  }catch(e){ alert('Error: ' + e.message); }
-}
+
+
 
 window.importarBackup=function(event){
   let file=event.target.files[0];
@@ -436,30 +421,92 @@ window.importarBackup=function(event){
   reader.onload=function(e){
     try{
       let data=JSON.parse(e.target.result);
-      let torneosImport = [];
-      if(Array.isArray(data)){ torneosImport = data; }
-      else if(data && Array.isArray(data.torneos)){ torneosImport = data.torneos; }
-      else if(data && typeof data === 'object' && data.nombre){ torneosImport = [data]; }
-      else { alert('Formato no reconocido'); return; }
-      if(!confirm('Reemplazar ' + torneos.length + ' por ' + torneosImport.length + ' torneos?')) return;
-      let normalized = torneosImport.map(torneo => ({
-        id: torneo.id || Date.now().toString(),
-        nombre: torneo.nombre || 'Sin nombre',
-        equipos: Array.isArray(torneo.equipos) ? torneo.equipos.map(eq => ({id: eq.id||Date.now().toString(), nombre: eq.nombre||'Equipo', logo: eq.logo||''})) : [],
-        partidos: Array.isArray(torneo.partidos) ? torneo.partidos.map(par => ({fecha: par.fecha||new Date().toISOString().slice(0,10), local: par.local||'', visit: par.visit||'', gL: par.gL||par.golesLocal||0, gV: par.gV||par.golesVisita||0, stats: par.stats||[], asistentes: par.asistentes||[]})) : [],
-        plantilla: Array.isArray(torneo.plantilla) ? torneo.plantilla.map(jug => ({id: jug.id||Date.now().toString(), nombre: jug.nombre||'Jugador', equipo: jug.equipo||'', pos: jug.pos||'Delantero', numero: jug.numero||0, foto: jug.foto||''})) : [],
-        fechaCreacion: torneo.fechaCreacion || new Date().toISOString()
-      }));
-      torneos = normalized;
-      localStorage.setItem('tablas_pro_torneos', JSON.stringify(torneos));
-      cargarTorneos();
-      let totalEq=0,totalJug=0,totalPar=0;
-      normalized.forEach(tor=>{totalEq+=(tor.equipos||[]).length;totalJug+=(tor.plantilla||[]).length;totalPar+=(tor.partidos||[]).length;});
-      alert('Restaurado: '+normalized.length+' torneo(s), '+totalEq+' equipo(s), '+totalJug+' jugador(es), '+totalPar+' partido(s)');
-    }catch(err){ alert('Error: '+err.message); }
+      if(!Array.isArray(data)){
+        if(data.nombre) data=[data];
+        else throw new Error('Formato invalido');
+      }
+      // Compatibilidad: limpiar asistentes si vienen del backup viejo
+      data.forEach(t=>{
+        if(t.partidos){
+          t.partidos.forEach(p=>{
+            delete p.asistentes; // eliminamos asistencia al partido
+            // asegurar stats solo con asistencias de gol
+            if(p.stats) p.stats.forEach(s=>{ if(s.asistencias===undefined) s.asistencias=0; });
+          });
+        }
+      });
+      let validos = data.filter(t=> t.nombre || t.equipos);
+      // Normalizar equipos a strings para evitar undefined
+      validos.forEach(v=>{
+        if(v.equipos && Array.isArray(v.equipos)){
+          v.equipos = v.equipos.map(eq=> typeof eq==='string' ? eq : (eq.nombre||eq.name||'')).filter(Boolean);
+        }
+      });
+      if(validos.length===0) throw new Error('Sin torneos validos');
+
+      // Verificar duplicados por nombre
+      let nuevosTorneos = [...torneos];
+      let reemplazados = 0;
+      let creados = 0;
+      for(let t of validos){
+        let idx = nuevosTorneos.findIndex(ex=> ex.nombre && t.nombre && ex.nombre.toLowerCase().trim() === t.nombre.toLowerCase().trim());
+        if(idx>=0){
+          if(confirm(`Ya existe un torneo llamado "${t.nombre}".\n\n¿Quieres REEMPLAZARLO?\nOK = Reemplazar\nCancelar = Crear como copia con otro nombre`)){
+            // conservar id existente para reemplazo
+            t.id = nuevosTorneos[idx].id;
+            nuevosTorneos[idx]=t;
+            reemplazados++;
+          }else{
+            t.id = Date.now().toString()+'_'+Math.random().toString(36).substr(2,5);
+            t.nombre = t.nombre + ' (copia)';
+            nuevosTorneos.push(t);
+            creados++;
+          }
+        }else{
+          nuevosTorneos.push(t);
+          creados++;
+        }
+      }
+      if(confirm(`Importar ${validos.length} torneos?\n${reemplazados} se reemplazaran, ${creados} se crearan nuevos. Continuar?`)){
+        torneos=nuevosTorneos;
+        saveAll();
+        cargarTorneos();
+        alert('Backup restaurado: '+validos.length+' torneos procesados');
+      }
+    }catch(err){ alert('Error leyendo archivo: '+err.message); console.error(err); }
+    event.target.value='';
   };
   reader.readAsText(file);
-  event.target.value='';
+}
+
+window.exportarBackup=function(){
+  // Export compatible: sin asistentes, solo asistencias de gol
+  let exportData = torneos.map(t=>{
+    return {
+      id: t.id,
+      nombre: t.nombre,
+      equipos: (t.equipos||[]).map(eq=> typeof eq==='string' ? eq : (eq.nombre||'')).filter(Boolean),
+      partidos: (t.partidos||[]).map(p=>({
+        fecha: p.fecha,
+        local: p.local,
+        visit: p.visit,
+        gL: p.gL,
+        gV: p.gV,
+        stats: (p.stats||[]).map(s=>({id:s.id,nombre:s.nombre,equipo:s.equipo,goles:s.goles||0,asistencias:s.asistencias||0,amarillas:s.amarillas||0,rojas:s.rojas||0}))
+        // asistentes eliminado intencionalmente
+      })),
+      plantilla: t.plantilla||[]
+    };
+  });
+  let dataStr = JSON.stringify(exportData);
+  let blob = new Blob([dataStr], {type:'application/json'});
+  let url = URL.createObjectURL(blob);
+  let a = document.createElement('a');
+  a.href=url; a.download='tablas_pro_backup_'+new Date().toISOString().slice(0,10)+'.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 // Init
